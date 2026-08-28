@@ -1,6 +1,6 @@
 # Debian 13 OS Agent Harness
 
-Kernel internals TUI assistant. Develop in Cursor on macOS; build and run on a Debian 13 OrbStack VM.
+Kernel internals TUI assistant (starting with networking).
 
 ## Prerequisites (macOS)
 
