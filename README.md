@@ -1,6 +1,6 @@
 # Debian 13 OS Agent Harness
 
-Kernel internals TUI assistant (starting with networking).
+Linux kernel internals TUI assistant (starting with networking).
 
 ## Prerequisites (macOS)
 
