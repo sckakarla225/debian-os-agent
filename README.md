@@ -1,6 +1,6 @@
 # Debian 13 OS Agent Harness
 
-Kernel internals TUI assistant (starting with networking).
+Kernel internals TUI assistant. Supports internals across the following components: processes & schedulers, memory, networking, the virtual file system, hardware device drivers, security permissions, system calls, clocks & timers.
 
 ## Prerequisites (macOS)
 

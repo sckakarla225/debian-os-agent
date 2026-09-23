@@ -19,7 +19,6 @@ impl Default for AppState {
 fn main() -> std::io::Result<()> {
     ratatui::run(|terminal| {
         let mut app = AppState::default();
-
         loop {
             terminal.draw(|frame| render(frame, &app))?;
             if handle_event(&mut app)? {
@@ -76,7 +75,6 @@ fn render_input(frame: &mut Frame, app: &AppState, area: ratatui::layout::Rect) 
     ]);
     frame.render_widget(Paragraph::new(line), inner);
 
-    // Place the terminal cursor at the end of the typed text.
     let cursor_x = inner.x + PROMPT.len() as u16 + app.prompt.chars().count() as u16;
     frame.set_cursor_position((
         cursor_x.min(inner.right().saturating_sub(1)),
@@ -116,7 +114,6 @@ fn handle_event(app: &mut AppState) -> std::io::Result<bool> {
             } else {
                 format!("submitted ({})", app.prompt.len())
             };
-            // Keep `app.input` so you can read/submit it here (API call, command, etc.).
         }
         KeyCode::Esc => {
             app.prompt.clear();
