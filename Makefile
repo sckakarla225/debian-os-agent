@@ -7,12 +7,12 @@
 VM ?= debian-13-vm@orb
 REMOTE_DIR ?= ~/debian-os-agent
 
-RSYNC_EXCLUDES := --exclude target/ --exclude .git/ --exclude .DS_Store
+RSYNC_EXCLUDES := --exclude target/ --exclude .git/ --exclude .DS_Store --exclude 'clab-*/'
 
 .PHONY: sync run check shell setup-hint
 
 sync:
-	rsync -avz --delete $(RSYNC_EXCLUDES) ./ $(VM):$(REMOTE_DIR)/
+	rsync -avz --inplace --delete $(RSYNC_EXCLUDES) ./ $(VM):$(REMOTE_DIR)/
 
 run: sync
 	ssh -t $(VM) 'source "$$HOME/.cargo/env" 2>/dev/null; cd $(REMOTE_DIR) && cargo run'

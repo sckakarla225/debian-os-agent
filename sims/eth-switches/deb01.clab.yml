@@ -1,0 +1,394 @@
+# deb01: 5-stage leaf-spine (Clos) fabric of Debian 13 L3 switches.
+# Pod 1 (AS 65101): sp1, sp2, leaf1, leaf2, leaf3, acc1
+# Pod 2 (AS 65102): sp3, sp4, leaf4, leaf5, bl1
+# Superspines (AS 65100): ss1, ss2
+name: deb01
+
+topology:
+  groups:
+    switch:
+      kind: linux
+      image: debian:trixie
+      cpu: 2
+      memory: 2Gb
+      sysctls:
+        net.ipv4.ip_forward: 1
+        net.ipv6.conf.all.forwarding: 1
+        net.ipv4.conf.all.rp_filter: 2
+        net.ipv4.fib_multipath_hash_policy: 1
+        net.ipv4.conf.all.arp_ignore: 1
+        net.ipv4.conf.all.arp_announce: 2
+        net.ipv6.route.max_size: 8192
+      binds:
+        - setup.sh:/lab/setup.sh:ro
+      exec:
+        - bash /lab/setup.sh
+    host:
+      kind: linux
+      image: debian:trixie
+      exec:
+        - bash -c 'apt-get update -qq && DEBIAN_FRONTEND=noninteractive apt-get install -y -qq --no-install-recommends iproute2 iputils-ping arping iperf3 tcpdump >/dev/null'
+        - bash -c 'ip addr add $IP dev eth1 && ip link set eth1 up'
+        - bash -c 'ip route replace default via $GW dev eth1'
+
+  nodes:
+    # Superspine switches
+    ss1:
+      group: switch
+      env:
+        LOOPBACK: "10.255.0.1/32"
+        ROUTED: "swp11=10.0.0.0/31 swp12=10.0.0.2/31 swp13=10.0.0.4/31 swp14=10.0.0.6/31"
+        BGP_ASN: "65100"
+        BGP_PORTS: "swp11 swp12 swp13 swp14"
+    ss2:
+      group: switch
+      env:
+        LOOPBACK: "10.255.0.2/32"
+        ROUTED: "swp11=10.0.0.8/31 swp12=10.0.0.10/31 swp13=10.0.0.12/31 swp14=10.0.0.14/31"
+        BGP_ASN: "65100"
+        BGP_PORTS: "swp11 swp12 swp13 swp14"
+
+    # POD 1 switches
+    sp1:
+      group: switch
+      env:
+        LOOPBACK: "10.255.1.1/32"
+        ROUTED: "swp11=10.1.0.0/31 swp12=10.1.0.2/31 swp13=10.1.0.4/31 swp15=10.0.0.1/31 swp16=10.0.0.9/31"
+        OSPF_PORTS: "swp11 swp12 swp13"
+        OSPF_DEFAULT: "yes"
+        OSPF_REDISTRIBUTE: "bgp"
+        BGP_ASN: "65101"
+        BGP_PORTS: "swp15 swp16"
+        BGP_AGGREGATES: "10.1.0.0/16"
+        BGP_REDISTRIBUTE: "ospf connected"
+    sp2:
+      group: switch
+      env:
+        LOOPBACK: "10.255.1.2/32"
+        ROUTED: "swp11=10.1.0.6/31 swp12=10.1.0.8/31 swp13=10.1.0.10/31 swp15=10.0.0.3/31 swp16=10.0.0.11/31"
+        OSPF_PORTS: "swp11 swp12 swp13"
+        OSPF_DEFAULT: "yes"
+        OSPF_REDISTRIBUTE: "bgp"
+        BGP_ASN: "65101"
+        BGP_PORTS: "swp15 swp16"
+        BGP_AGGREGATES: "10.1.0.0/16"
+        BGP_REDISTRIBUTE: "ospf connected"
+    leaf1:
+      group: switch
+      env:
+        LOOPBACK: "10.255.1.11/32"
+        STP_PRIORITY: "4096"
+        ROUTED: "swp11=10.1.0.1/31 swp12=10.1.0.7/31"
+        TRUNK: "swp13=10,20 swp14=10,20"
+        SVI: "10=10.1.10.2/24 20=10.1.20.2/24"
+        VRRP: "10=10.1.10.1/24 20=10.1.20.1/24"
+        VRRP_PRIORITY: "200"
+        OSPF_PORTS: "swp11 swp12"
+    leaf2:
+      group: switch
+      env:
+        LOOPBACK: "10.255.1.12/32"
+        STP_PRIORITY: "8192"
+        ROUTED: "swp11=10.1.0.3/31 swp12=10.1.0.9/31"
+        TRUNK: "swp13=10,20 swp14=10,20"
+        ACCESS: "swp1=20"
+        SVI: "10=10.1.10.3/24 20=10.1.20.3/24"
+        VRRP: "10=10.1.10.1/24 20=10.1.20.1/24"
+        VRRP_PRIORITY: "100"
+        OSPF_PORTS: "swp11 swp12"
+    leaf3:
+      group: switch
+      env:
+        LOOPBACK: "10.255.1.13/32"
+        ROUTED: "swp11=10.1.0.5/31 swp12=10.1.0.11/31"
+        ACCESS: "swp1=30 swp2=30"
+        SVI: "30=10.1.30.1/24"
+        OSPF_PORTS: "swp11 swp12"
+        STATIC_ROUTES: "0.0.0.0/0=10.1.0.4@250"
+    acc1:
+      group: switch
+      env:
+        TRUNK: "swp11=10,20 swp12=10,20"
+        ACCESS: "swp1=10 swp2=10 swp3=20"
+
+    # POD 2 switches
+    sp3:
+      group: switch
+      env:
+        LOOPBACK: "10.255.2.1/32"
+        ROUTED: "swp11=10.2.0.0/31 swp12=10.2.0.2/31 swp13=10.2.0.4/31 swp15=10.0.0.5/31 swp16=10.0.0.13/31"
+        OSPF_PORTS: "swp11 swp12 swp13"
+        OSPF_REDISTRIBUTE: "bgp"
+        BGP_ASN: "65102"
+        BGP_PORTS: "swp15 swp16"
+        BGP_NETWORKS: "0.0.0.0/0"
+        BGP_AGGREGATES: "10.2.0.0/16"
+        BGP_REDISTRIBUTE: "ospf connected"
+    sp4:
+      group: switch
+      env:
+        LOOPBACK: "10.255.2.2/32"
+        ROUTED: "swp11=10.2.0.6/31 swp12=10.2.0.8/31 swp13=10.2.0.10/31 swp15=10.0.0.7/31 swp16=10.0.0.15/31"
+        OSPF_PORTS: "swp11 swp12 swp13"
+        OSPF_REDISTRIBUTE: "bgp"
+        BGP_ASN: "65102"
+        BGP_PORTS: "swp15 swp16"
+        BGP_NETWORKS: "0.0.0.0/0"
+        BGP_AGGREGATES: "10.2.0.0/16"
+        BGP_REDISTRIBUTE: "ospf connected"
+    leaf4:
+      group: switch
+      env:
+        LOOPBACK: "10.255.2.11/32"
+        ROUTED: "swp11=10.2.0.1/31 swp12=10.2.0.7/31"
+        ACCESS: "swp1=40 swp2=40"
+        SVI: "40=10.2.40.1/24"
+        OSPF_PORTS: "swp11 swp12"
+    leaf5:
+      group: switch
+      env:
+        LOOPBACK: "10.255.2.12/32"
+        ROUTED: "swp11=10.2.0.3/31 swp12=10.2.0.9/31"
+        ACCESS: "swp1=50 swp2=51"
+        SVI: "50=10.2.50.1/24 51=10.2.51.1/24"
+        OSPF_PORTS: "swp11 swp12"
+    bl1:
+      group: switch
+      env:
+        LOOPBACK: "10.255.2.13/32"
+        ROUTED: "swp11=10.2.0.5/31 swp12=10.2.0.11/31 swp1=203.0.113.0/31"
+        OSPF_PORTS: "swp11 swp12"
+        OSPF_DEFAULT: "yes"
+        STATIC_ROUTES: "0.0.0.0/0=203.0.113.1"
+
+    # Hosts
+    h1:  { group: host, env: { IP: "10.1.10.11/24", GW: "10.1.10.1" } }
+    h2:  { group: host, env: { IP: "10.1.10.12/24", GW: "10.1.10.1" } }
+    h3:  { group: host, env: { IP: "10.1.20.13/24", GW: "10.1.20.1" } }
+    h4:  { group: host, env: { IP: "10.1.20.14/24", GW: "10.1.20.1" } }
+    h5:  { group: host, env: { IP: "10.1.30.15/24", GW: "10.1.30.1" } }
+    h6:  { group: host, env: { IP: "10.1.30.16/24", GW: "10.1.30.1" } }
+    h7:  { group: host, env: { IP: "10.2.40.17/24", GW: "10.2.40.1" } }
+    h8:  { group: host, env: { IP: "10.2.40.18/24", GW: "10.2.40.1" } }
+    h9:  { group: host, env: { IP: "10.2.50.19/24", GW: "10.2.50.1" } }
+    h10: { group: host, env: { IP: "10.2.51.20/24", GW: "10.2.51.1" } }
+
+    # Default route endpoint
+    ext:
+      group: host
+      env: { IP: "203.0.113.1/31", GW: "203.0.113.0" }
+      exec:
+        - bash -c 'apt-get update -qq && DEBIAN_FRONTEND=noninteractive apt-get install -y -qq --no-install-recommends iproute2 iputils-ping arping iperf3 tcpdump >/dev/null'
+        - bash -c 'ip addr add $IP dev eth1 && ip link set eth1 up'
+        - bash -c 'ip route replace default via $GW dev eth1'
+        - ip addr add 198.51.100.1/32 dev lo
+
+  links:
+    # Superspine to spine (routed, eBGP)
+    - { endpoints: ["ss1:swp11", "sp1:swp15"], mtu: 9216 }
+    - { endpoints: ["ss1:swp12", "sp2:swp15"], mtu: 9216 }
+    - { endpoints: ["ss1:swp13", "sp3:swp15"], mtu: 9216 }
+    - { endpoints: ["ss1:swp14", "sp4:swp15"], mtu: 9216 }
+    - { endpoints: ["ss2:swp11", "sp1:swp16"], mtu: 9216 }
+    - { endpoints: ["ss2:swp12", "sp2:swp16"], mtu: 9216 }
+    - { endpoints: ["ss2:swp13", "sp3:swp16"], mtu: 9216 }
+    - { endpoints: ["ss2:swp14", "sp4:swp16"], mtu: 9216 }
+
+    # Spine to leaf (routed, OSPF)
+    - { endpoints: ["sp1:swp11", "leaf1:swp11"], mtu: 9216 }
+    - { endpoints: ["sp1:swp12", "leaf2:swp11"], mtu: 9216 }
+    - { endpoints: ["sp1:swp13", "leaf3:swp11"], mtu: 9216 }
+    - { endpoints: ["sp2:swp11", "leaf1:swp12"], mtu: 9216 }
+    - { endpoints: ["sp2:swp12", "leaf2:swp12"], mtu: 9216 }
+    - { endpoints: ["sp2:swp13", "leaf3:swp12"], mtu: 9216 }
+    - { endpoints: ["sp3:swp11", "leaf4:swp11"], mtu: 9216 }
+    - { endpoints: ["sp3:swp12", "leaf5:swp11"], mtu: 9216 }
+    - { endpoints: ["sp3:swp13", "bl1:swp11"], mtu: 9216 }
+    - { endpoints: ["sp4:swp11", "leaf4:swp12"], mtu: 9216 }
+    - { endpoints: ["sp4:swp12", "leaf5:swp12"], mtu: 9216 }
+    - { endpoints: ["sp4:swp13", "bl1:swp12"], mtu: 9216 }
+
+    # L2 trunks (VLANs 10, 20)
+    - { endpoints: ["leaf1:swp14", "leaf2:swp14"], mtu: 9216 }
+    - { endpoints: ["leaf1:swp13", "acc1:swp11"], mtu: 9216 }
+    - { endpoints: ["leaf2:swp13", "acc1:swp12"], mtu: 9216 }
+
+    # Border router
+    - { endpoints: ["bl1:swp1", "ext:eth1"], mtu: 9216 }
+
+    # Hosts (access ports)
+    - { endpoints: ["acc1:swp1", "h1:eth1"], mtu: 9216 }
+    - { endpoints: ["acc1:swp2", "h2:eth1"], mtu: 9216 }
+    - { endpoints: ["acc1:swp3", "h3:eth1"], mtu: 9216 }
+    - { endpoints: ["leaf2:swp1", "h4:eth1"], mtu: 9216 }
+    - { endpoints: ["leaf3:swp1", "h5:eth1"], mtu: 9216 }
+    - { endpoints: ["leaf3:swp2", "h6:eth1"], mtu: 9216 }
+    - { endpoints: ["leaf4:swp1", "h7:eth1"], mtu: 9216 }
+    - { endpoints: ["leaf4:swp2", "h8:eth1"], mtu: 9216 }
+    - { endpoints: ["leaf5:swp1", "h9:eth1"], mtu: 9216 }
+    - { endpoints: ["leaf5:swp2", "h10:eth1"], mtu: 9216 }
+
+    # Unwired ports
+    - { type: dummy, endpoint: { node: ss1, interface: swp1 }, mtu: 9216 }
+    - { type: dummy, endpoint: { node: ss1, interface: swp2 }, mtu: 9216 }
+    - { type: dummy, endpoint: { node: ss1, interface: swp3 }, mtu: 9216 }
+    - { type: dummy, endpoint: { node: ss1, interface: swp4 }, mtu: 9216 }
+    - { type: dummy, endpoint: { node: ss1, interface: swp5 }, mtu: 9216 }
+    - { type: dummy, endpoint: { node: ss1, interface: swp6 }, mtu: 9216 }
+    - { type: dummy, endpoint: { node: ss1, interface: swp7 }, mtu: 9216 }
+    - { type: dummy, endpoint: { node: ss1, interface: swp8 }, mtu: 9216 }
+    - { type: dummy, endpoint: { node: ss1, interface: swp9 }, mtu: 9216 }
+    - { type: dummy, endpoint: { node: ss1, interface: swp10 }, mtu: 9216 }
+    - { type: dummy, endpoint: { node: ss1, interface: swp15 }, mtu: 9216 }
+    - { type: dummy, endpoint: { node: ss1, interface: swp16 }, mtu: 9216 }
+
+    - { type: dummy, endpoint: { node: ss2, interface: swp1 }, mtu: 9216 }
+    - { type: dummy, endpoint: { node: ss2, interface: swp2 }, mtu: 9216 }
+    - { type: dummy, endpoint: { node: ss2, interface: swp3 }, mtu: 9216 }
+    - { type: dummy, endpoint: { node: ss2, interface: swp4 }, mtu: 9216 }
+    - { type: dummy, endpoint: { node: ss2, interface: swp5 }, mtu: 9216 }
+    - { type: dummy, endpoint: { node: ss2, interface: swp6 }, mtu: 9216 }
+    - { type: dummy, endpoint: { node: ss2, interface: swp7 }, mtu: 9216 }
+    - { type: dummy, endpoint: { node: ss2, interface: swp8 }, mtu: 9216 }
+    - { type: dummy, endpoint: { node: ss2, interface: swp9 }, mtu: 9216 }
+    - { type: dummy, endpoint: { node: ss2, interface: swp10 }, mtu: 9216 }
+    - { type: dummy, endpoint: { node: ss2, interface: swp15 }, mtu: 9216 }
+    - { type: dummy, endpoint: { node: ss2, interface: swp16 }, mtu: 9216 }
+
+    - { type: dummy, endpoint: { node: sp1, interface: swp1 }, mtu: 9216 }
+    - { type: dummy, endpoint: { node: sp1, interface: swp2 }, mtu: 9216 }
+    - { type: dummy, endpoint: { node: sp1, interface: swp3 }, mtu: 9216 }
+    - { type: dummy, endpoint: { node: sp1, interface: swp4 }, mtu: 9216 }
+    - { type: dummy, endpoint: { node: sp1, interface: swp5 }, mtu: 9216 }
+    - { type: dummy, endpoint: { node: sp1, interface: swp6 }, mtu: 9216 }
+    - { type: dummy, endpoint: { node: sp1, interface: swp7 }, mtu: 9216 }
+    - { type: dummy, endpoint: { node: sp1, interface: swp8 }, mtu: 9216 }
+    - { type: dummy, endpoint: { node: sp1, interface: swp9 }, mtu: 9216 }
+    - { type: dummy, endpoint: { node: sp1, interface: swp10 }, mtu: 9216 }
+    - { type: dummy, endpoint: { node: sp1, interface: swp14 }, mtu: 9216 }
+
+    - { type: dummy, endpoint: { node: sp2, interface: swp1 }, mtu: 9216 }
+    - { type: dummy, endpoint: { node: sp2, interface: swp2 }, mtu: 9216 }
+    - { type: dummy, endpoint: { node: sp2, interface: swp3 }, mtu: 9216 }
+    - { type: dummy, endpoint: { node: sp2, interface: swp4 }, mtu: 9216 }
+    - { type: dummy, endpoint: { node: sp2, interface: swp5 }, mtu: 9216 }
+    - { type: dummy, endpoint: { node: sp2, interface: swp6 }, mtu: 9216 }
+    - { type: dummy, endpoint: { node: sp2, interface: swp7 }, mtu: 9216 }
+    - { type: dummy, endpoint: { node: sp2, interface: swp8 }, mtu: 9216 }
+    - { type: dummy, endpoint: { node: sp2, interface: swp9 }, mtu: 9216 }
+    - { type: dummy, endpoint: { node: sp2, interface: swp10 }, mtu: 9216 }
+    - { type: dummy, endpoint: { node: sp2, interface: swp14 }, mtu: 9216 }
+
+    - { type: dummy, endpoint: { node: sp3, interface: swp1 }, mtu: 9216 }
+    - { type: dummy, endpoint: { node: sp3, interface: swp2 }, mtu: 9216 }
+    - { type: dummy, endpoint: { node: sp3, interface: swp3 }, mtu: 9216 }
+    - { type: dummy, endpoint: { node: sp3, interface: swp4 }, mtu: 9216 }
+    - { type: dummy, endpoint: { node: sp3, interface: swp5 }, mtu: 9216 }
+    - { type: dummy, endpoint: { node: sp3, interface: swp6 }, mtu: 9216 }
+    - { type: dummy, endpoint: { node: sp3, interface: swp7 }, mtu: 9216 }
+    - { type: dummy, endpoint: { node: sp3, interface: swp8 }, mtu: 9216 }
+    - { type: dummy, endpoint: { node: sp3, interface: swp9 }, mtu: 9216 }
+    - { type: dummy, endpoint: { node: sp3, interface: swp10 }, mtu: 9216 }
+    - { type: dummy, endpoint: { node: sp3, interface: swp14 }, mtu: 9216 }
+
+    - { type: dummy, endpoint: { node: sp4, interface: swp1 }, mtu: 9216 }
+    - { type: dummy, endpoint: { node: sp4, interface: swp2 }, mtu: 9216 }
+    - { type: dummy, endpoint: { node: sp4, interface: swp3 }, mtu: 9216 }
+    - { type: dummy, endpoint: { node: sp4, interface: swp4 }, mtu: 9216 }
+    - { type: dummy, endpoint: { node: sp4, interface: swp5 }, mtu: 9216 }
+    - { type: dummy, endpoint: { node: sp4, interface: swp6 }, mtu: 9216 }
+    - { type: dummy, endpoint: { node: sp4, interface: swp7 }, mtu: 9216 }
+    - { type: dummy, endpoint: { node: sp4, interface: swp8 }, mtu: 9216 }
+    - { type: dummy, endpoint: { node: sp4, interface: swp9 }, mtu: 9216 }
+    - { type: dummy, endpoint: { node: sp4, interface: swp10 }, mtu: 9216 }
+    - { type: dummy, endpoint: { node: sp4, interface: swp14 }, mtu: 9216 }
+
+    - { type: dummy, endpoint: { node: leaf1, interface: swp1 }, mtu: 9216 }
+    - { type: dummy, endpoint: { node: leaf1, interface: swp2 }, mtu: 9216 }
+    - { type: dummy, endpoint: { node: leaf1, interface: swp3 }, mtu: 9216 }
+    - { type: dummy, endpoint: { node: leaf1, interface: swp4 }, mtu: 9216 }
+    - { type: dummy, endpoint: { node: leaf1, interface: swp5 }, mtu: 9216 }
+    - { type: dummy, endpoint: { node: leaf1, interface: swp6 }, mtu: 9216 }
+    - { type: dummy, endpoint: { node: leaf1, interface: swp7 }, mtu: 9216 }
+    - { type: dummy, endpoint: { node: leaf1, interface: swp8 }, mtu: 9216 }
+    - { type: dummy, endpoint: { node: leaf1, interface: swp9 }, mtu: 9216 }
+    - { type: dummy, endpoint: { node: leaf1, interface: swp10 }, mtu: 9216 }
+    - { type: dummy, endpoint: { node: leaf1, interface: swp15 }, mtu: 9216 }
+    - { type: dummy, endpoint: { node: leaf1, interface: swp16 }, mtu: 9216 }
+
+    - { type: dummy, endpoint: { node: leaf2, interface: swp2 }, mtu: 9216 }
+    - { type: dummy, endpoint: { node: leaf2, interface: swp3 }, mtu: 9216 }
+    - { type: dummy, endpoint: { node: leaf2, interface: swp4 }, mtu: 9216 }
+    - { type: dummy, endpoint: { node: leaf2, interface: swp5 }, mtu: 9216 }
+    - { type: dummy, endpoint: { node: leaf2, interface: swp6 }, mtu: 9216 }
+    - { type: dummy, endpoint: { node: leaf2, interface: swp7 }, mtu: 9216 }
+    - { type: dummy, endpoint: { node: leaf2, interface: swp8 }, mtu: 9216 }
+    - { type: dummy, endpoint: { node: leaf2, interface: swp9 }, mtu: 9216 }
+    - { type: dummy, endpoint: { node: leaf2, interface: swp10 }, mtu: 9216 }
+    - { type: dummy, endpoint: { node: leaf2, interface: swp15 }, mtu: 9216 }
+    - { type: dummy, endpoint: { node: leaf2, interface: swp16 }, mtu: 9216 }
+
+    - { type: dummy, endpoint: { node: leaf3, interface: swp3 }, mtu: 9216 }
+    - { type: dummy, endpoint: { node: leaf3, interface: swp4 }, mtu: 9216 }
+    - { type: dummy, endpoint: { node: leaf3, interface: swp5 }, mtu: 9216 }
+    - { type: dummy, endpoint: { node: leaf3, interface: swp6 }, mtu: 9216 }
+    - { type: dummy, endpoint: { node: leaf3, interface: swp7 }, mtu: 9216 }
+    - { type: dummy, endpoint: { node: leaf3, interface: swp8 }, mtu: 9216 }
+    - { type: dummy, endpoint: { node: leaf3, interface: swp9 }, mtu: 9216 }
+    - { type: dummy, endpoint: { node: leaf3, interface: swp10 }, mtu: 9216 }
+    - { type: dummy, endpoint: { node: leaf3, interface: swp13 }, mtu: 9216 }
+    - { type: dummy, endpoint: { node: leaf3, interface: swp14 }, mtu: 9216 }
+    - { type: dummy, endpoint: { node: leaf3, interface: swp15 }, mtu: 9216 }
+    - { type: dummy, endpoint: { node: leaf3, interface: swp16 }, mtu: 9216 }
+
+    - { type: dummy, endpoint: { node: leaf4, interface: swp3 }, mtu: 9216 }
+    - { type: dummy, endpoint: { node: leaf4, interface: swp4 }, mtu: 9216 }
+    - { type: dummy, endpoint: { node: leaf4, interface: swp5 }, mtu: 9216 }
+    - { type: dummy, endpoint: { node: leaf4, interface: swp6 }, mtu: 9216 }
+    - { type: dummy, endpoint: { node: leaf4, interface: swp7 }, mtu: 9216 }
+    - { type: dummy, endpoint: { node: leaf4, interface: swp8 }, mtu: 9216 }
+    - { type: dummy, endpoint: { node: leaf4, interface: swp9 }, mtu: 9216 }
+    - { type: dummy, endpoint: { node: leaf4, interface: swp10 }, mtu: 9216 }
+    - { type: dummy, endpoint: { node: leaf4, interface: swp13 }, mtu: 9216 }
+    - { type: dummy, endpoint: { node: leaf4, interface: swp14 }, mtu: 9216 }
+    - { type: dummy, endpoint: { node: leaf4, interface: swp15 }, mtu: 9216 }
+    - { type: dummy, endpoint: { node: leaf4, interface: swp16 }, mtu: 9216 }
+
+    - { type: dummy, endpoint: { node: leaf5, interface: swp3 }, mtu: 9216 }
+    - { type: dummy, endpoint: { node: leaf5, interface: swp4 }, mtu: 9216 }
+    - { type: dummy, endpoint: { node: leaf5, interface: swp5 }, mtu: 9216 }
+    - { type: dummy, endpoint: { node: leaf5, interface: swp6 }, mtu: 9216 }
+    - { type: dummy, endpoint: { node: leaf5, interface: swp7 }, mtu: 9216 }
+    - { type: dummy, endpoint: { node: leaf5, interface: swp8 }, mtu: 9216 }
+    - { type: dummy, endpoint: { node: leaf5, interface: swp9 }, mtu: 9216 }
+    - { type: dummy, endpoint: { node: leaf5, interface: swp10 }, mtu: 9216 }
+    - { type: dummy, endpoint: { node: leaf5, interface: swp13 }, mtu: 9216 }
+    - { type: dummy, endpoint: { node: leaf5, interface: swp14 }, mtu: 9216 }
+    - { type: dummy, endpoint: { node: leaf5, interface: swp15 }, mtu: 9216 }
+    - { type: dummy, endpoint: { node: leaf5, interface: swp16 }, mtu: 9216 }
+
+    - { type: dummy, endpoint: { node: bl1, interface: swp2 }, mtu: 9216 }
+    - { type: dummy, endpoint: { node: bl1, interface: swp3 }, mtu: 9216 }
+    - { type: dummy, endpoint: { node: bl1, interface: swp4 }, mtu: 9216 }
+    - { type: dummy, endpoint: { node: bl1, interface: swp5 }, mtu: 9216 }
+    - { type: dummy, endpoint: { node: bl1, interface: swp6 }, mtu: 9216 }
+    - { type: dummy, endpoint: { node: bl1, interface: swp7 }, mtu: 9216 }
+    - { type: dummy, endpoint: { node: bl1, interface: swp8 }, mtu: 9216 }
+    - { type: dummy, endpoint: { node: bl1, interface: swp9 }, mtu: 9216 }
+    - { type: dummy, endpoint: { node: bl1, interface: swp10 }, mtu: 9216 }
+    - { type: dummy, endpoint: { node: bl1, interface: swp13 }, mtu: 9216 }
+    - { type: dummy, endpoint: { node: bl1, interface: swp14 }, mtu: 9216 }
+    - { type: dummy, endpoint: { node: bl1, interface: swp15 }, mtu: 9216 }
+    - { type: dummy, endpoint: { node: bl1, interface: swp16 }, mtu: 9216 }
+
+    - { type: dummy, endpoint: { node: acc1, interface: swp4 }, mtu: 9216 }
+    - { type: dummy, endpoint: { node: acc1, interface: swp5 }, mtu: 9216 }
+    - { type: dummy, endpoint: { node: acc1, interface: swp6 }, mtu: 9216 }
+    - { type: dummy, endpoint: { node: acc1, interface: swp7 }, mtu: 9216 }
+    - { type: dummy, endpoint: { node: acc1, interface: swp8 }, mtu: 9216 }
+    - { type: dummy, endpoint: { node: acc1, interface: swp9 }, mtu: 9216 }
+    - { type: dummy, endpoint: { node: acc1, interface: swp10 }, mtu: 9216 }
+    - { type: dummy, endpoint: { node: acc1, interface: swp13 }, mtu: 9216 }
+    - { type: dummy, endpoint: { node: acc1, interface: swp14 }, mtu: 9216 }
+    - { type: dummy, endpoint: { node: acc1, interface: swp15 }, mtu: 9216 }
+    - { type: dummy, endpoint: { node: acc1, interface: swp16 }, mtu: 9216 }
